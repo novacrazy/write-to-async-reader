@@ -53,7 +53,9 @@ impl<'a> AsyncRead for Reader<'a> {
     ) -> std::task::Poll<io::Result<()>> {
         // initialize callback
         if !self.co.started() {
-            self.co.resume(std::ptr::null_mut());
+            if let CoroutineResult::Return(res) = self.co.resume(std::ptr::null_mut()) {
+                return std::task::Poll::Ready(res);
+            }
         }
 
         if !self.co.done() {
