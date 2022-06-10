@@ -59,12 +59,11 @@ impl<'a> AsyncRead for Reader<'a> {
         }
 
         if !self.co.done() {
-            // SAFETY: The coroutine body is executed immediately, so the lifetime is actually the same
-            // just need to bypass the borrow checker...
-            if let CoroutineResult::Return(res) = self
-                .co
-                .resume(unsafe { std::mem::transmute::<_, *mut ReadBuf<'static>>(buf) })
-            {
+            if let CoroutineResult::Return(res) = self.co.resume(unsafe {
+                // SAFETY: The coroutine body is executed immediately, so the lifetime is actually the same
+                // just need to bypass the borrow checker...
+                std::mem::transmute::<_, *mut ReadBuf<'static>>(buf as *mut ReadBuf<'_>)
+            }) {
                 return std::task::Poll::Ready(res);
             }
         }
