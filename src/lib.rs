@@ -1,7 +1,9 @@
 use std::io::{self, Write};
 
-use corosensei::{stack::DefaultStack, CoroutineResult, ScopedCoroutine, Yielder};
+use corosensei::{stack::Stack, CoroutineResult, ScopedCoroutine, Yielder};
 use tokio::io::{AsyncRead, ReadBuf};
+
+pub use corosensei::stack::DefaultStack;
 
 #[repr(transparent)]
 pub struct Writer<'a> {
@@ -9,21 +11,33 @@ pub struct Writer<'a> {
 }
 
 #[repr(transparent)]
-pub struct Reader<'a> {
-    co: ScopedCoroutine<'a, *mut tokio::io::ReadBuf<'static>, (), io::Result<()>, DefaultStack>,
+pub struct Reader<'a, S: Stack = DefaultStack> {
+    co: ScopedCoroutine<'a, *mut tokio::io::ReadBuf<'static>, (), io::Result<()>, S>,
 }
 
-impl<'a> Reader<'a> {
+impl<'a> Reader<'a, DefaultStack> {
     pub fn new<F>(f: F) -> Self
     where
         F: 'a + for<'b> FnOnce(&'b mut Writer<'b>) -> io::Result<()>,
     {
+        Reader::with_stack(DefaultStack::default(), f)
+    }
+}
+
+impl<'a, S: Stack> Reader<'a, S> {
+    pub fn with_stack<F>(stack: S, f: F) -> Self
+    where
+        F: 'a + for<'b> FnOnce(&'b mut Writer<'b>) -> io::Result<()>,
+    {
         Reader {
-            co: ScopedCoroutine::new(|y: &Yielder<*mut tokio::io::ReadBuf<'static>, ()>, orig| {
-                // when first initialized, it will just send null
-                assert!(orig.is_null());
-                f(&mut Writer { y })
-            }),
+            co: ScopedCoroutine::with_stack(
+                stack,
+                |y: &Yielder<*mut tokio::io::ReadBuf<'static>, ()>, orig| {
+                    // when first initialized, it will just send null
+                    assert!(orig.is_null());
+                    f(&mut Writer { y })
+                },
+            ),
         }
     }
 }
@@ -45,7 +59,7 @@ impl Write for Writer<'_> {
     }
 }
 
-impl<'a> AsyncRead for Reader<'a> {
+impl<'a, S: Stack + Unpin> AsyncRead for Reader<'a, S> {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,

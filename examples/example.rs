@@ -31,16 +31,22 @@ async fn main() -> std::io::Result<()> {
         })),
     };
 
-    let mut rdr = Reader::new(|w| {
-        serde_json::to_writer(w, &value)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
-    });
+    let mut stack = write_to_async_reader::DefaultStack::default();
 
-    let mut out = String::new();
+    {
+        let mut rdr = Reader::with_stack(&mut stack, |w| {
+            serde_json::to_writer(w, &value)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        });
 
-    rdr.read_to_string(&mut out).await?;
+        let mut out = String::new();
 
-    println!("Out: {}", out);
+        rdr.read_to_string(&mut out).await?;
+
+        println!("Out: {}", out);
+    }
+
+    drop(stack); // drop or reuse
 
     Ok(())
 }
